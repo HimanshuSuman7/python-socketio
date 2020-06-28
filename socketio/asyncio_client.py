@@ -35,7 +35,8 @@ class AsyncClient(client.Client):
                                  adjusted by +/- 50%.
     :param logger: To enable logging set to ``True`` or pass a logger object to
                    use. To disable logging set to ``False``. The default is
-                   ``False``.
+                   ``False``. Note that fatal errors are logged even when
+                   ``logger`` is ``False``.
     :param binary: ``True`` to support binary payloads, ``False`` to treat all
                    payloads as text. On Python 2, if this is set to ``True``,
                    ``unicode`` values are treated as text, and ``str`` and
@@ -49,9 +50,17 @@ class AsyncClient(client.Client):
 
     The Engine.IO configuration supports the following settings:
 
+    :param request_timeout: A timeout in seconds for requests. The default is
+                            5 seconds.
+    :param ssl_verify: ``True`` to verify SSL certificates, or ``False`` to
+                       skip SSL certificate verification, allowing
+                       connections to servers with self signed certificates.
+                       The default is ``True``.
     :param engineio_logger: To enable Engine.IO logging set to ``True`` or pass
                             a logger object to use. To disable logging set to
-                            ``False``. The default is ``False``.
+                            ``False``. The default is ``False``. Note that
+                            fatal errors are logged even when
+                            ``engineio_logger`` is ``False``.
     """
     def is_asyncio_based(self):
         return True
@@ -80,7 +89,7 @@ class AsyncClient(client.Client):
 
         Example usage::
 
-            sio = socketio.Client()
+            sio = socketio.AsyncClient()
             sio.connect('http://localhost:5000')
         """
         self.connection_url = url
@@ -101,6 +110,9 @@ class AsyncClient(client.Client):
                                    transports=transports,
                                    engineio_path=socketio_path)
         except engineio.exceptions.ConnectionError as exc:
+            await self._trigger_event(
+                'connect_error', '/',
+                exc.args[1] if len(exc.args) > 1 else exc.args[0])
             six.raise_from(exceptions.ConnectionError(exc.args[0]), None)
         self.connected = True
 
@@ -139,7 +151,13 @@ class AsyncClient(client.Client):
                          by the client. Callback functions can only be used
                          when addressing an individual client.
 
-        Note: this method is a coroutine.
+        Note: this method is not designed to be used concurrently. If multiple
+        tasks are emitting at the same time on the same client connection, then
+        messages composed of multiple packets may end up being sent in an
+        incorrect sequence. Use standard concurrency solutions (such as a Lock
+        object) to prevent this situation.
+
+        Note 2: this method is a coroutine.
         """
         namespace = namespace or '/'
         if namespace != '/' and namespace not in self.namespaces:
@@ -205,7 +223,13 @@ class AsyncClient(client.Client):
                         the client acknowledges the event, then a
                         ``TimeoutError`` exception is raised.
 
-        Note: this method is a coroutine.
+        Note: this method is not designed to be used concurrently. If multiple
+        tasks are emitting at the same time on the same client connection, then
+        messages composed of multiple packets may end up being sent in an
+        incorrect sequence. Use standard concurrency solutions (such as a Lock
+        object) to prevent this situation.
+
+        Note 2: this method is a coroutine.
         """
         callback_event = self.eio.create_event()
         callback_args = []
@@ -342,10 +366,15 @@ class AsyncClient(client.Client):
             else:
                 callback(*data)
 
-    def _handle_error(self, namespace):
+    async def _handle_error(self, namespace, data):
         namespace = namespace or '/'
         self.logger.info('Connection to namespace {} was rejected'.format(
             namespace))
+        if data is None:
+            data = tuple()
+        elif not isinstance(data, (tuple, list)):
+            data = (data,)
+        await self._trigger_event('connect_error', namespace, *data)
         if namespace in self.namespaces:
             self.namespaces.remove(namespace)
         if namespace == '/':
@@ -439,7 +468,7 @@ class AsyncClient(client.Client):
                     pkt.packet_type == packet.BINARY_ACK:
                 self._binary_packet = pkt
             elif pkt.packet_type == packet.ERROR:
-                self._handle_error(pkt.namespace)
+                await self._handle_error(pkt.namespace, pkt.data)
             else:
                 raise ValueError('Unknown packet type.')
 

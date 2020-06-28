@@ -1,5 +1,37 @@
 # python-socketio change log
 
+**Release 4.6.0** - 2020-05-23
+
+- Improved handling of rejected connections [#391](https://github.com/miguelgrinberg/python-socketio/issues/391) [#487](https://github.com/miguelgrinberg/python-socketio/issues/487) [#447](https://github.com/miguelgrinberg/python-socketio/issues/447) ([commit](https://github.com/miguelgrinberg/python-socketio/commit/8d08096dc442e817b5e4ce53321ccf196daafcd1))
+- Fix multi-namespace disconnect logic [#456](https://github.com/miguelgrinberg/python-socketio/issues/456) ([commit](https://github.com/miguelgrinberg/python-socketio/commit/76a9860abc11b5a18fa05e6a8fef815390642d09))
+- `AsyncPubSubManager` does not await for `can_disconnect()` [#488](https://github.com/miguelgrinberg/python-socketio/issues/488) ([commit](https://github.com/miguelgrinberg/python-socketio/commit/b0518936b949f759f2be8da0cc7b9c30af440371)) (thanks **Andrei Neagu**!)
+- Require a recipient in `call()` function in the server [#476](https://github.com/miguelgrinberg/python-socketio/issues/476) ([commit](https://github.com/miguelgrinberg/python-socketio/commit/bbb9a7f0b630b6932960ae2545c62d6e5aee4f09)) (thanks **tt2468**!)
+- ASGI startup and shutdown lifespan handlers [#468](https://github.com/miguelgrinberg/python-socketio/issues/468) Co-authored-by: avi <senavi@berkeley.edu> ([commit](https://github.com/miguelgrinberg/python-socketio/commit/87d51dd1e6cde94adf4f8fb23828e1537c4f1301)) (thanks **databasedav**!)
+- Remove references to Python 2.7 in the documentation ([commit](https://github.com/miguelgrinberg/python-socketio/commit/02a7ce32c00ed5e64b0fae62d2d5ef93f25367df))
+- Fix server example in docstring [#449](https://github.com/miguelgrinberg/python-socketio/issues/449) ([commit](https://github.com/miguelgrinberg/python-socketio/commit/8caebfd524d77d118243878c4bd9d396c420e0a3)) (thanks **wangjiancn**!)
+- Fix documentation typo [#450](https://github.com/miguelgrinberg/python-socketio/issues/450) ([commit](https://github.com/miguelgrinberg/python-socketio/commit/cdde846e575c98d1316b1857b933bfeabf159580)) (thanks **kizError**!)
+
+**Release 4.5.1** - 2020-03-22
+
+- Fix endless loop when disconnecting on multi-server deployments [#441](https://github.com/miguelgrinberg/python-socketio/issues/441) ([commit](https://github.com/miguelgrinberg/python-socketio/commit/16e873dbc7e100780c83a907a11299bd8269e5e3))
+
+**Release 4.5.0** - 2020-03-14
+
+- Add support for client disconnects in multi-server configurations [#1174](https://github.com/miguelgrinberg/Flask-SocketIO/issues/1174) ([commit](https://github.com/miguelgrinberg/python-socketio/commit/01378ef1efca73330327006be467270462d504e0))
+- Initialize the client's SIGINT signal handler only if a client is created [#424](https://github.com/miguelgrinberg/python-socketio/issues/424) ([commit](https://github.com/miguelgrinberg/python-socketio/commit/dc89963e328920a3756cefb508213c310ffa730c))
+- Fix for `Server` and `AsyncServer` when emitting no data [#420](https://github.com/miguelgrinberg/python-socketio/issues/420) ([commit](https://github.com/miguelgrinberg/python-socketio/commit/e2242ce40e65c682e031d245db50fdd7956c3b2d)) (thanks **Aaron**!)
+- More accurate logging documentation ([commit](https://github.com/miguelgrinberg/python-socketio/commit/d745477abf606f56f566f9d5b1b7bf9ffdb4fbc6))
+- `AsyncClient` documentation fixes [#389](https://github.com/miguelgrinberg/python-socketio/issues/389) ([commit](https://github.com/miguelgrinberg/python-socketio/commit/aa2882cb3e2f3cda3a9d8c94b1c5db1bd0dbbf99)) (thanks **Dmitry Volodin**!)
+- Document concurrency problems with emits [#403](https://github.com/miguelgrinberg/python-socketio/issues/403) ([commit](https://github.com/miguelgrinberg/python-socketio/commit/d972ca3a5476f5e4e9a114913bdd5f528e558a9f))
+- Minor documentation fixes [#386](https://github.com/miguelgrinberg/python-socketio/issues/386) ([commit](https://github.com/miguelgrinberg/python-socketio/commit/d4b403431152cbbbf31ff723562b069a36c330c4)) (thanks **Rotzbua**!)
+
+**Release 4.4.0** - 2019-11-24
+
+- Support the `connect_error` event in the client [#344](https://github.com/miguelgrinberg/python-socketio/issues/344) ([commit](https://github.com/miguelgrinberg/python-socketio/commit/805d5f37413a1e3bbad22012237412803217b4b9))
+- Do not dispatch events for disconnected namespaces [#333](https://github.com/miguelgrinberg/python-socketio/issues/333) ([commit](https://github.com/miguelgrinberg/python-socketio/commit/a839a36fa0fa7f0e5d8976ff47b217f6b1e8a44b))
+- Fix documentation typos [#374](https://github.com/miguelgrinberg/python-socketio/issues/374) ([commit](https://github.com/miguelgrinberg/python-socketio/commit/b60bbc0307edd0bef2c8b11197ef5a04b2d11b71)) (thanks **Dmitry Volodin**!)
+- Updated documentation with new Engine.IO client options ([commit](https://github.com/miguelgrinberg/python-socketio/commit/7c32b379aeeafdb4d6e24e8695734c985753a9d7))
+
 **Release 4.3.1** - 2019-08-05
 
 - New asyncio based RabbitMQ manager [#320](https://github.com/miguelgrinberg/python-socketio/issues/320) ([commit](https://github.com/miguelgrinberg/python-socketio/commit/d984f32e76cc3c204fb6099cbb3c3cd91bfe6e3a)) (thanks **salimaboubacar**!)

@@ -45,9 +45,9 @@ The example that follows shows a simple Python client:
 Client Features
 ---------------
 
-- Can connect to other Socket.IO complaint servers besides the one in
+- Can connect to other Socket.IO compliant servers besides the one in
   this package.
-- Compatible with Python 2.7 and 3.5+.
+- Compatible with Python 3.5+.
 - Two versions of the client, one for standard Python and another for
   asyncio.
 - Uses an event-based architecture implemented with decorators that
@@ -127,13 +127,13 @@ Server Features
 
 - Can connect to servers running other compliant Socket.IO clients besides
   the one in this package.
-- Compatible with Python 2.7 and Python 3.5+.
+- Compatible with Python Python 3.5+.
 - Two versions of the server, one for standard Python and another for
   asyncio.
 - Supports large number of clients even on modest hardware due to being
   asynchronous.
 - Can be hosted on any `WSGI <https://wsgi.readthedocs.io/en/latest/index.html>`_ and
-  `ASGI <https://asgi.readthedocs.io/en/latest/>`_ web servers includind
+  `ASGI <https://asgi.readthedocs.io/en/latest/>`_ web servers including
   `Gunicorn <https://gunicorn.org/>`_, `Uvicorn <https://github.com/encode/uvicorn>`_,
   `eventlet <http://eventlet.net/>`_ and `gevent <http://gevent.org>`_.
 - Can be integrated with WSGI applications written in frameworks such as Flask, Django,

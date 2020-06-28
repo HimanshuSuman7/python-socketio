@@ -138,6 +138,10 @@ class TestServer(unittest.TestCase):
         self.assertRaises(exceptions.TimeoutError, s.call, 'foo',
                           sid='123', timeout=12)
 
+    def test_call_with_broadcast(self, eio):
+        s = server.Server()
+        self.assertRaises(ValueError, s.call, 'foo')
+
     def test_call_without_async_handlers(self, eio):
         mgr = mock.MagicMock()
         s = server.Server(client_manager=mgr, async_handlers=False)
@@ -219,6 +223,12 @@ class TestServer(unittest.TestCase):
                                            '2/foo,["my event",["foo","bar"]]',
                                            binary=False)
 
+    def test_emit_internal_with_none(self, eio):
+        s = server.Server()
+        s._emit_internal('123', 'my event', None, namespace='/foo')
+        s.eio.send.assert_called_once_with('123', '2/foo,["my event"]',
+                                           binary=False)
+
     def test_emit_internal_with_callback(self, eio):
         s = server.Server()
         id = s.manager._generate_ack_id('123', '/foo', 'cb')
@@ -275,22 +285,24 @@ class TestServer(unittest.TestCase):
         s = server.Server(client_manager=mgr)
         handler = mock.MagicMock(return_value=False)
         s.on('connect', handler)
-        s._handle_eio_connect('123', 'environ')
+        ret = s._handle_eio_connect('123', 'environ')
+        self.assertFalse(ret)
         handler.assert_called_once_with('123', 'environ')
         self.assertEqual(s.manager.connect.call_count, 1)
         self.assertEqual(s.manager.disconnect.call_count, 1)
         self.assertEqual(s.environ, {})
-        s.eio.send.assert_called_once_with('123', '4', binary=False)
 
     def test_handle_connect_namespace_rejected(self, eio):
         mgr = mock.MagicMock()
         s = server.Server(client_manager=mgr)
         handler = mock.MagicMock(return_value=False)
         s.on('connect', handler, namespace='/foo')
-        s._handle_eio_connect('123', 'environ')
+        ret = s._handle_eio_connect('123', 'environ')
         s._handle_eio_message('123', '0/foo')
+        self.assertIsNone(ret)
         self.assertEqual(s.manager.connect.call_count, 2)
         self.assertEqual(s.manager.disconnect.call_count, 1)
+        self.assertEqual(s.environ, {'123': 'environ'})
         s.eio.send.assert_any_call('123', '4/foo', binary=False)
 
     def test_handle_connect_rejected_always_connect(self, eio):
@@ -298,7 +310,8 @@ class TestServer(unittest.TestCase):
         s = server.Server(client_manager=mgr, always_connect=True)
         handler = mock.MagicMock(return_value=False)
         s.on('connect', handler)
-        s._handle_eio_connect('123', 'environ')
+        ret = s._handle_eio_connect('123', 'environ')
+        self.assertFalse(ret)
         handler.assert_called_once_with('123', 'environ')
         self.assertEqual(s.manager.connect.call_count, 1)
         self.assertEqual(s.manager.disconnect.call_count, 1)
@@ -311,10 +324,12 @@ class TestServer(unittest.TestCase):
         s = server.Server(client_manager=mgr, always_connect=True)
         handler = mock.MagicMock(return_value=False)
         s.on('connect', handler, namespace='/foo')
-        s._handle_eio_connect('123', 'environ')
+        ret = s._handle_eio_connect('123', 'environ')
         s._handle_eio_message('123', '0/foo')
+        self.assertIsNone(ret)
         self.assertEqual(s.manager.connect.call_count, 2)
         self.assertEqual(s.manager.disconnect.call_count, 1)
+        self.assertEqual(s.environ, {'123': 'environ'})
         s.eio.send.assert_any_call('123', '0/foo', binary=False)
         s.eio.send.assert_any_call('123', '1/foo', binary=False)
 
@@ -322,27 +337,56 @@ class TestServer(unittest.TestCase):
         mgr = mock.MagicMock()
         s = server.Server(client_manager=mgr)
         handler = mock.MagicMock(
-            side_effect=exceptions.ConnectionRefusedError())
+            side_effect=exceptions.ConnectionRefusedError('fail_reason'))
         s.on('connect', handler)
-        s._handle_eio_connect('123', 'environ')
+        ret = s._handle_eio_connect('123', 'environ')
+        self.assertEqual(ret, 'fail_reason')
         handler.assert_called_once_with('123', 'environ')
         self.assertEqual(s.manager.connect.call_count, 1)
         self.assertEqual(s.manager.disconnect.call_count, 1)
         self.assertEqual(s.environ, {})
-        s.eio.send.assert_any_call('123', '4', binary=False)
+
+    def test_handle_connect_rejected_with_empty_exception(self, eio):
+        mgr = mock.MagicMock()
+        s = server.Server(client_manager=mgr)
+        handler = mock.MagicMock(
+            side_effect=exceptions.ConnectionRefusedError())
+        s.on('connect', handler)
+        ret = s._handle_eio_connect('123', 'environ')
+        self.assertFalse(ret)
+        handler.assert_called_once_with('123', 'environ')
+        self.assertEqual(s.manager.connect.call_count, 1)
+        self.assertEqual(s.manager.disconnect.call_count, 1)
+        self.assertEqual(s.environ, {})
 
     def test_handle_connect_namespace_rejected_with_exception(self, eio):
         mgr = mock.MagicMock()
         s = server.Server(client_manager=mgr)
         handler = mock.MagicMock(
-            side_effect=exceptions.ConnectionRefusedError(u'fail_reason'))
+            side_effect=exceptions.ConnectionRefusedError(u'fail_reason', 1))
         s.on('connect', handler, namespace='/foo')
-        s._handle_eio_connect('123', 'environ')
+        ret = s._handle_eio_connect('123', 'environ')
         s._handle_eio_message('123', '0/foo')
+        self.assertIsNone(ret)
         self.assertEqual(s.manager.connect.call_count, 2)
         self.assertEqual(s.manager.disconnect.call_count, 1)
-        print(s.eio.send.call_args)
-        s.eio.send.assert_any_call('123', '4/foo,"fail_reason"', binary=False)
+        self.assertEqual(s.environ, {'123': 'environ'})
+        s.eio.send.assert_any_call('123', '4/foo,["fail_reason",1]',
+                                   binary=False)
+
+    def test_handle_connect_namespace_rejected_with_empty_exception(self, eio):
+        mgr = mock.MagicMock()
+        s = server.Server(client_manager=mgr)
+        handler = mock.MagicMock(
+            side_effect=exceptions.ConnectionRefusedError())
+        s.on('connect', handler, namespace='/foo')
+        ret = s._handle_eio_connect('123', 'environ')
+        s._handle_eio_message('123', '0/foo')
+        self.assertIsNone(ret)
+        self.assertEqual(s.manager.connect.call_count, 2)
+        self.assertEqual(s.manager.disconnect.call_count, 1)
+        self.assertEqual(s.environ, {'123': 'environ'})
+        s.eio.send.assert_any_call('123', '4/foo', binary=False)
 
     def test_handle_disconnect(self, eio):
         mgr = mock.MagicMock()
@@ -546,6 +590,12 @@ class TestServer(unittest.TestCase):
         s = server.Server()
         s._handle_eio_connect('123', 'environ')
         s.disconnect('123')
+        s.eio.send.assert_any_call('123', '1', binary=False)
+
+    def test_disconnect_ignore_queue(self, eio):
+        s = server.Server()
+        s._handle_eio_connect('123', 'environ')
+        s.disconnect('123', ignore_queue=True)
         s.eio.send.assert_any_call('123', '1', binary=False)
 
     def test_disconnect_namespace(self, eio):

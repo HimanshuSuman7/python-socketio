@@ -42,6 +42,7 @@ class TestAsyncServer(unittest.TestCase):
 
     def _get_mock_manager(self):
         mgr = mock.MagicMock()
+        mgr.can_disconnect = AsyncMock()
         mgr.emit = AsyncMock()
         mgr.close_room = AsyncMock()
         mgr.trigger_callback = AsyncMock()
@@ -145,6 +146,10 @@ class TestAsyncServer(unittest.TestCase):
         self.assertRaises(exceptions.TimeoutError, _run,
                           s.call('foo', sid='123', timeout=0.01))
 
+    def test_call_with_broadcast(self, eio):
+        s = asyncio_server.AsyncServer()
+        self.assertRaises(ValueError, _run, s.call('foo'))
+
     def test_call_without_async_handlers(self, eio):
         mgr = self._get_mock_manager()
         s = asyncio_server.AsyncServer(client_manager=mgr,
@@ -229,6 +234,13 @@ class TestAsyncServer(unittest.TestCase):
         s.eio.send.mock.assert_called_once_with(
             '123', '2/foo,["my event",["foo","bar"]]', binary=False)
 
+    def test_emit_internal_with_none(self, eio):
+        eio.return_value.send = AsyncMock()
+        s = asyncio_server.AsyncServer()
+        _run(s._emit_internal('123', 'my event', None, namespace='/foo'))
+        s.eio.send.mock.assert_called_once_with(
+            '123', '2/foo,["my event"]', binary=False)
+
     def test_emit_internal_with_callback(self, eio):
         eio.return_value.send = AsyncMock()
         s = asyncio_server.AsyncServer()
@@ -301,17 +313,16 @@ class TestAsyncServer(unittest.TestCase):
         s.eio.send.mock.assert_any_call('123', '0/foo', binary=False)
 
     def test_handle_connect_rejected(self, eio):
-        eio.return_value.send = AsyncMock()
         mgr = self._get_mock_manager()
         s = asyncio_server.AsyncServer(client_manager=mgr)
         handler = mock.MagicMock(return_value=False)
         s.on('connect', handler)
-        _run(s._handle_eio_connect('123', 'environ'))
+        ret = _run(s._handle_eio_connect('123', 'environ'))
+        self.assertFalse(ret)
         handler.assert_called_once_with('123', 'environ')
         self.assertEqual(s.manager.connect.call_count, 1)
         self.assertEqual(s.manager.disconnect.call_count, 1)
         self.assertEqual(s.environ, {})
-        s.eio.send.mock.assert_called_once_with('123', '4', binary=False)
 
     def test_handle_connect_namespace_rejected(self, eio):
         eio.return_value.send = AsyncMock()
@@ -319,11 +330,12 @@ class TestAsyncServer(unittest.TestCase):
         s = asyncio_server.AsyncServer(client_manager=mgr)
         handler = mock.MagicMock(return_value=False)
         s.on('connect', handler, namespace='/foo')
-        _run(s._handle_eio_connect('123', 'environ'))
+        ret = _run(s._handle_eio_connect('123', 'environ'))
         _run(s._handle_eio_message('123', '0/foo'))
+        self.assertIsNone(ret)
         self.assertEqual(s.manager.connect.call_count, 2)
         self.assertEqual(s.manager.disconnect.call_count, 1)
-        self.assertEqual(s.environ, {})
+        self.assertEqual(s.environ, {'123': 'environ'})
         s.eio.send.mock.assert_any_call('123', '4/foo', binary=False)
 
     def test_handle_connect_rejected_always_connect(self, eio):
@@ -333,7 +345,8 @@ class TestAsyncServer(unittest.TestCase):
                                        always_connect=True)
         handler = mock.MagicMock(return_value=False)
         s.on('connect', handler)
-        _run(s._handle_eio_connect('123', 'environ'))
+        ret = _run(s._handle_eio_connect('123', 'environ'))
+        self.assertFalse(ret)
         handler.assert_called_once_with('123', 'environ')
         self.assertEqual(s.manager.connect.call_count, 1)
         self.assertEqual(s.manager.disconnect.call_count, 1)
@@ -348,11 +361,12 @@ class TestAsyncServer(unittest.TestCase):
                                        always_connect=True)
         handler = mock.MagicMock(return_value=False)
         s.on('connect', handler, namespace='/foo')
-        _run(s._handle_eio_connect('123', 'environ'))
+        ret = _run(s._handle_eio_connect('123', 'environ'))
         _run(s._handle_eio_message('123', '0/foo'))
+        self.assertFalse(ret)
         self.assertEqual(s.manager.connect.call_count, 2)
         self.assertEqual(s.manager.disconnect.call_count, 1)
-        self.assertEqual(s.environ, {})
+        self.assertEqual(s.environ, {'123': 'environ'})
         s.eio.send.mock.assert_any_call('123', '0/foo', binary=False)
         s.eio.send.mock.assert_any_call('123', '1/foo', binary=False)
 
@@ -363,11 +377,24 @@ class TestAsyncServer(unittest.TestCase):
         handler = mock.MagicMock(
             side_effect=exceptions.ConnectionRefusedError('fail_reason'))
         s.on('connect', handler)
-        _run(s._handle_eio_connect('123', 'environ'))
+        ret = _run(s._handle_eio_connect('123', 'environ'))
+        self.assertEqual(ret, 'fail_reason')
         self.assertEqual(s.manager.connect.call_count, 1)
         self.assertEqual(s.manager.disconnect.call_count, 1)
         self.assertEqual(s.environ, {})
-        s.eio.send.mock.assert_any_call('123', '4"fail_reason"', binary=False)
+
+    def test_handle_connect_rejected_with_empty_exception(self, eio):
+        eio.return_value.send = AsyncMock()
+        mgr = self._get_mock_manager()
+        s = asyncio_server.AsyncServer(client_manager=mgr)
+        handler = mock.MagicMock(
+            side_effect=exceptions.ConnectionRefusedError())
+        s.on('connect', handler)
+        ret = _run(s._handle_eio_connect('123', 'environ'))
+        self.assertFalse(ret)
+        self.assertEqual(s.manager.connect.call_count, 1)
+        self.assertEqual(s.manager.disconnect.call_count, 1)
+        self.assertEqual(s.environ, {})
 
     def test_handle_connect_namespace_rejected_with_exception(self, eio):
         eio.return_value.send = AsyncMock()
@@ -376,13 +403,29 @@ class TestAsyncServer(unittest.TestCase):
         handler = mock.MagicMock(
             side_effect=exceptions.ConnectionRefusedError('fail_reason', 1))
         s.on('connect', handler, namespace='/foo')
-        _run(s._handle_eio_connect('123', 'environ'))
+        ret = _run(s._handle_eio_connect('123', 'environ'))
         _run(s._handle_eio_message('123', '0/foo'))
+        self.assertIsNone(ret)
         self.assertEqual(s.manager.connect.call_count, 2)
         self.assertEqual(s.manager.disconnect.call_count, 1)
-        self.assertEqual(s.environ, {})
+        self.assertEqual(s.environ, {'123': 'environ'})
         s.eio.send.mock.assert_any_call('123', '4/foo,["fail_reason",1]',
                                         binary=False)
+
+    def test_handle_connect_namespace_rejected_with_empty_exception(self, eio):
+        eio.return_value.send = AsyncMock()
+        mgr = self._get_mock_manager()
+        s = asyncio_server.AsyncServer(client_manager=mgr)
+        handler = mock.MagicMock(
+            side_effect=exceptions.ConnectionRefusedError())
+        s.on('connect', handler, namespace='/foo')
+        ret = _run(s._handle_eio_connect('123', 'environ'))
+        _run(s._handle_eio_message('123', '0/foo'))
+        self.assertIsNone(ret)
+        self.assertEqual(s.manager.connect.call_count, 2)
+        self.assertEqual(s.manager.disconnect.call_count, 1)
+        self.assertEqual(s.environ, {'123': 'environ'})
+        s.eio.send.mock.assert_any_call('123', '4/foo', binary=False)
 
     def test_handle_disconnect(self, eio):
         eio.return_value.send = AsyncMock()
@@ -614,6 +657,15 @@ class TestAsyncServer(unittest.TestCase):
         s = asyncio_server.AsyncServer()
         _run(s._handle_eio_connect('123', 'environ'))
         _run(s.disconnect('123'))
+        s.eio.send.mock.assert_any_call('123', '1', binary=False)
+        s.eio.disconnect.mock.assert_called_once_with('123')
+
+    def test_disconnect_ignore_queue(self, eio):
+        eio.return_value.send = AsyncMock()
+        eio.return_value.disconnect = AsyncMock()
+        s = asyncio_server.AsyncServer()
+        _run(s._handle_eio_connect('123', 'environ'))
+        _run(s.disconnect('123', ignore_queue=True))
         s.eio.send.mock.assert_any_call('123', '1', binary=False)
         s.eio.disconnect.mock.assert_called_once_with('123')
 

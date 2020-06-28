@@ -2,6 +2,7 @@ import itertools
 import logging
 import random
 import signal
+import threading
 
 import engineio
 import six
@@ -25,7 +26,7 @@ def signal_handler(sig, frame):  # pragma: no cover
     return original_signal_handler(sig, frame)
 
 
-original_signal_handler = signal.signal(signal.SIGINT, signal_handler)
+original_signal_handler = None
 
 
 class Client(object):
@@ -51,7 +52,8 @@ class Client(object):
                                  adjusted by +/- 50%.
     :param logger: To enable logging set to ``True`` or pass a logger object to
                    use. To disable logging set to ``False``. The default is
-                   ``False``.
+                   ``False``. Note that fatal errors are logged even when
+                   ``logger`` is ``False``.
     :param binary: ``True`` to support binary payloads, ``False`` to treat all
                    payloads as text. On Python 2, if this is set to ``True``,
                    ``unicode`` values are treated as text, and ``str`` and
@@ -65,14 +67,27 @@ class Client(object):
 
     The Engine.IO configuration supports the following settings:
 
+    :param request_timeout: A timeout in seconds for requests. The default is
+                            5 seconds.
+    :param ssl_verify: ``True`` to verify SSL certificates, or ``False`` to
+                       skip SSL certificate verification, allowing
+                       connections to servers with self signed certificates.
+                       The default is ``True``.
     :param engineio_logger: To enable Engine.IO logging set to ``True`` or pass
                             a logger object to use. To disable logging set to
-                            ``False``. The default is ``False``.
+                            ``False``. The default is ``False``. Note that
+                            fatal errors are logged even when
+                            ``engineio_logger`` is ``False``.
     """
     def __init__(self, reconnection=True, reconnection_attempts=0,
                  reconnection_delay=1, reconnection_delay_max=5,
                  randomization_factor=0.5, logger=False, binary=False,
                  json=None, **kwargs):
+        global original_signal_handler
+        if original_signal_handler is None and \
+                threading.current_thread() == threading.main_thread():
+            original_signal_handler = signal.signal(signal.SIGINT,
+                                                    signal_handler)
         self.reconnection = reconnection
         self.reconnection_attempts = reconnection_attempts
         self.reconnection_delay = reconnection_delay
@@ -261,6 +276,9 @@ class Client(object):
             self.eio.connect(url, headers=headers, transports=transports,
                              engineio_path=socketio_path)
         except engineio.exceptions.ConnectionError as exc:
+            self._trigger_event(
+                'connect_error', '/',
+                exc.args[1] if len(exc.args) > 1 else exc.args[0])
             six.raise_from(exceptions.ConnectionError(exc.args[0]), None)
         self.connected = True
 
@@ -296,6 +314,12 @@ class Client(object):
                          that will be passed to the function are those provided
                          by the client. Callback functions can only be used
                          when addressing an individual client.
+
+        Note: this method is not thread safe. If multiple threads are emitting
+        at the same time on the same client connection, messages composed of
+        multiple packets may end up being sent in an incorrect sequence. Use
+        standard concurrency solutions (such as a Lock object) to prevent this
+        situation.
         """
         namespace = namespace or '/'
         if namespace != '/' and namespace not in self.namespaces:
@@ -358,6 +382,12 @@ class Client(object):
         :param timeout: The waiting timeout. If the timeout is reached before
                         the client acknowledges the event, then a
                         ``TimeoutError`` exception is raised.
+
+        Note: this method is not thread safe. If multiple threads are emitting
+        at the same time on the same client connection, messages composed of
+        multiple packets may end up being sent in an incorrect sequence. Use
+        standard concurrency solutions (such as a Lock object) to prevent this
+        situation.
         """
         callback_event = self.eio.create_event()
         callback_args = []
@@ -498,10 +528,15 @@ class Client(object):
         if callback is not None:
             callback(*data)
 
-    def _handle_error(self, namespace):
+    def _handle_error(self, namespace, data):
         namespace = namespace or '/'
         self.logger.info('Connection to namespace {} was rejected'.format(
             namespace))
+        if data is None:
+            data = tuple()
+        elif not isinstance(data, (tuple, list)):
+            data = (data,)
+        self._trigger_event('connect_error', namespace, *data)
         if namespace in self.namespaces:
             self.namespaces.remove(namespace)
         if namespace == '/':
@@ -585,7 +620,7 @@ class Client(object):
                     pkt.packet_type == packet.BINARY_ACK:
                 self._binary_packet = pkt
             elif pkt.packet_type == packet.ERROR:
-                self._handle_error(pkt.namespace)
+                self._handle_error(pkt.namespace, pkt.data)
             else:
                 raise ValueError('Unknown packet type.')
 
